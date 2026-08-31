@@ -8,17 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-DATA_FILE = (
-    ROOT
-    / "data"
-    / "contributions.json"
-)
-
-OUTPUT_FILE = (
-    ROOT
-    / "contrib-heatmap.svg"
-)
-
+DATA_FILE = ROOT / "data" / "contributions.json"
+OUTPUT_FILE = ROOT / "contrib-heatmap.svg"
 
 PALETTE = [
     "#161b22",
@@ -28,7 +19,6 @@ PALETTE = [
     "#39d353",
     "#69f0a0",
 ]
-
 
 CELL_SIZE = 13
 CELL_GAP = 4
@@ -40,17 +30,8 @@ TOP_MARGIN = 72
 WEEKS = 53
 DAYS_PER_WEEK = 7
 
-WIDTH = (
-    LEFT_MARGIN
-    + WEEKS * CELL_STEP
-    + 32
-)
-
-HEIGHT = (
-    TOP_MARGIN
-    + DAYS_PER_WEEK * CELL_STEP
-    + 100
-)
+WIDTH = LEFT_MARGIN + WEEKS * CELL_STEP + 32
+HEIGHT = TOP_MARGIN + DAYS_PER_WEEK * CELL_STEP + 100
 
 
 def load_data():
@@ -74,25 +55,12 @@ def load_data():
 
 
 def get_level(item):
-    """
-    Use GitHub's data-level.
-
-    If count exists but level is zero,
-    derive a fallback level.
-    """
-
     count = int(
-        item.get(
-            "count",
-            0,
-        )
+        item.get("count", 0)
     )
 
     level = int(
-        item.get(
-            "level",
-            0,
-        )
+        item.get("level", 0)
     )
 
     if count > 0 and level == 0:
@@ -107,10 +75,7 @@ def get_level(item):
 
     return max(
         0,
-        min(
-            5,
-            level,
-        ),
+        min(5, level)
     )
 
 
@@ -129,8 +94,7 @@ def build_calendar(data):
         for item in days
     )
 
-    # GitHub contribution calendar starts
-    # weeks on Sunday.
+    # Finish on Saturday so the grid contains complete weeks.
     days_until_saturday = (
         6 - latest_date.weekday()
     ) % 7
@@ -152,9 +116,8 @@ def build_calendar(data):
     cells = []
 
     for week in range(WEEKS):
-        for weekday in range(
-            DAYS_PER_WEEK
-        ):
+        for weekday in range(DAYS_PER_WEEK):
+
             current_date = (
                 calendar_start
                 + timedelta(
@@ -175,7 +138,7 @@ def build_calendar(data):
                     "date": date_string,
                     "count": 0,
                     "level": 0,
-                },
+                }
             )
 
             cells.append(
@@ -186,7 +149,7 @@ def build_calendar(data):
                     "count": int(
                         item.get(
                             "count",
-                            0,
+                            0
                         )
                     ),
                     "level": get_level(
@@ -198,36 +161,28 @@ def build_calendar(data):
     return cells
 
 
-def svg_text(
-    x,
-    y,
-    text,
-    css_class,
-):
-    return (
-        f'<text x="{x}" y="{y}" '
-        f'class="{css_class}">'
-        f'{html.escape(str(text))}'
-        f'</text>'
+def escape(text):
+    return html.escape(
+        str(text),
+        quote=True
     )
 
 
 def render(data):
+
     username = data.get(
         "username",
-        "github",
+        "github"
     )
 
     total = int(
         data.get(
             "total",
-            0,
+            0
         )
     )
 
-    cells = build_calendar(
-        data
-    )
+    cells = build_calendar(data)
 
     svg = []
 
@@ -243,10 +198,7 @@ def render(data):
         f'viewBox="0 0 {WIDTH} {HEIGHT}">'
     )
 
-    # ---------------------------------------------------------
-    # BACKGROUND
-    # ---------------------------------------------------------
-
+    # Background
     svg.append(
         f'<rect '
         f'x="0" '
@@ -268,10 +220,7 @@ def render(data):
         f'stroke="#263244"/>'
     )
 
-    # ---------------------------------------------------------
-    # CSS
-    # ---------------------------------------------------------
-
+    # Fonts
     svg.append(
         """
 <style><![CDATA[
@@ -310,71 +259,59 @@ def render(data):
 """
     )
 
-    # ---------------------------------------------------------
-    # HEADER
-    # ---------------------------------------------------------
-
+    # Header
     svg.append(
-        svg_text(
-            32,
-            31,
-            f"{username}@github ~ $ ./contributions.sh",
-            "mono title",
-        )
+        f'<text '
+        f'x="32" '
+        f'y="31" '
+        f'class="mono title">'
+        f'{escape(username)}@github ~ $ ./contributions.sh'
+        f'</text>'
     )
 
     svg.append(
-        svg_text(
-            32,
-            51,
-            f"{total:,} contributions in the last year",
-            "mono subtitle",
-        )
+        f'<text '
+        f'x="32" '
+        f'y="51" '
+        f'class="mono subtitle">'
+        f'{total:,} contributions in the last year'
+        f'</text>'
     )
 
-    # ---------------------------------------------------------
-    # MONTH LABELS
-    # ---------------------------------------------------------
-
+    # Month labels
     previous_month = None
 
     for week in range(WEEKS):
-        current = (
-            cells[
-                week * DAYS_PER_WEEK
-            ]
-        )
 
         current_date = date.fromisoformat(
-            current["date"]
+            cells[
+                week * DAYS_PER_WEEK
+            ]["date"]
         )
 
-        month = current_date.month
+        if current_date.month != previous_month:
 
-        if month != previous_month:
             x = (
                 LEFT_MARGIN
                 + week * CELL_STEP
             )
 
             svg.append(
-                svg_text(
-                    x,
-                    68,
-                    current_date.strftime(
-                        "%b"
-                    ),
-                    "mono month",
-                )
+                f'<text '
+                f'x="{x}" '
+                f'y="68" '
+                f'class="mono month">'
+                f'{current_date.strftime("%b")}'
+                f'</text>'
             )
 
-            previous_month = month
+            previous_month = (
+                current_date.month
+            )
 
-    # ---------------------------------------------------------
-    # HEATMAP
-    # ---------------------------------------------------------
-
+    # Contribution cells
     for cell in cells:
+
         week = cell["week"]
         weekday = cell["weekday"]
 
@@ -392,16 +329,17 @@ def render(data):
         count = cell["count"]
         cell_date = cell["date"]
 
-        color = PALETTE[
-            level
-        ]
+        color = PALETTE[level]
 
         if count == 0:
+
             label = (
                 f"No contributions on "
                 f"{cell_date}"
             )
+
         else:
+
             suffix = (
                 ""
                 if count == 1
@@ -414,19 +352,17 @@ def render(data):
                 f"{cell_date}"
             )
 
-        # -----------------------------------------------------
-        # IMPORTANT:
-        #
-        # Do NOT put opacity="0" on a parent <g>.
-        #
-        # The rect itself is animated.
-        # -----------------------------------------------------
-
         delay = (
-            week * 7
-            + weekday
-        ) * 0.012
+            (
+                week * 7
+                + weekday
+            )
+            * 0.012
+        )
 
+        # IMPORTANT:
+        # The rect itself starts invisible.
+        # There is NO invisible parent <g>.
         svg.append(
             f'<rect '
             f'x="{x}" '
@@ -437,7 +373,7 @@ def render(data):
             f'fill="{color}" '
             f'opacity="0">'
             f'<title>'
-            f'{html.escape(label)}'
+            f'{escape(label)}'
             f'</title>'
             f'<animate '
             f'attributeName="opacity" '
@@ -449,10 +385,7 @@ def render(data):
             f'</rect>'
         )
 
-    # ---------------------------------------------------------
-    # LEGEND
-    # ---------------------------------------------------------
-
+    # Legend
     legend_y = (
         TOP_MARGIN
         + DAYS_PER_WEEK * CELL_STEP
@@ -460,12 +393,12 @@ def render(data):
     )
 
     svg.append(
-        svg_text(
-            32,
-            legend_y,
-            "Less",
-            "mono legend",
-        )
+        f'<text '
+        f'x="32" '
+        f'y="{legend_y}" '
+        f'class="mono legend">'
+        f'Less'
+        f'</text>'
     )
 
     legend_x = 67
@@ -473,6 +406,7 @@ def render(data):
     for level, color in enumerate(
         PALETTE
     ):
+
         x = (
             legend_x
             + level * CELL_STEP
@@ -489,31 +423,29 @@ def render(data):
         )
 
     svg.append(
-        svg_text(
-            legend_x
-            + len(PALETTE)
-            * CELL_STEP
-            + 6,
-            legend_y,
-            "More",
-            "mono legend",
-        )
+        f'<text '
+        f'x="{legend_x + len(PALETTE) * CELL_STEP + 6}" '
+        f'y="{legend_y}" '
+        f'class="mono legend">'
+        f'More'
+        f'</text>'
     )
 
     svg.append(
-        "</svg>"
+        '</svg>'
     )
 
     return "\n".join(svg)
 
 
 def main():
+
     data = load_data()
 
     total = int(
         data.get(
             "total",
-            0,
+            0
         )
     )
 
@@ -523,13 +455,11 @@ def main():
             "heatmap. Fix contribution data first."
         )
 
-    svg = render(
-        data
-    )
+    svg = render(data)
 
     OUTPUT_FILE.write_text(
         svg,
-        encoding="utf-8",
+        encoding="utf-8"
     )
 
     print(
