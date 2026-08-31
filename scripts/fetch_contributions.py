@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-Fetch the public GitHub contribution calendar without an API token.
-
-The GitHub calendar exposes each day with data-date/data-level attributes.
-The contribution count is rendered in the cell's accessible text/tool-tip,
-so this parser deliberately checks both aria-label and visible cell text.
-"""
 
 import json
 import os
@@ -16,100 +9,347 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
+
 USERNAME = os.environ.get("GITHUB_USERNAME", "naichal18").strip()
+
 URL = f"https://github.com/users/{USERNAME}/contributions"
+
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "data" / "contributions.json"
+
+OUTPUT_FILE = (
+    ROOT
+    / "data"
+    / "contributions.json"
+)
 
 
-def parse_count(text: str) -> int:
-    """Extract '12 contributions' or '1 contribution' from arbitrary cell text."""
+def extract_count(text: str) -> int:
+    """Extract contribution count from GitHub tooltip text."""
+
     if not text:
         return 0
 
-    # Normalize whitespace first.
     text = " ".join(text.split())
 
-    match = re.search(r"(\d[\d,]*)\s+contributions?", text, re.IGNORECASE)
-    if match:
-        return int(match.group(1).replace(",", ""))
+    match = re.search(
+        r"(\d[\d,]*)\s+contributions?",
+        text,
+        re.IGNORECASE,
+    )
 
-    # GitHub explicitly uses "No contributions" for zero days.
-    if re.search(r"\bno\s+contributions?\b", text, re.IGNORECASE):
+    if match:
+        return int(
+            match.group(1).replace(",", "")
+        )
+
+    if re.search(
+        r"\bno\s+contributions?\b",
+        text,
+        re.IGNORECASE,
+    ):
         return 0
 
     return 0
 
 
-def parse_cells(page_html: str):
-    soup = BeautifulSoup(page_html, "html.parser")
-    days = {}
+def fetch_github_page() -> str:
 
-    # Prefer cells that actually carry GitHub's date/level metadata.
-    cells = soup.select("[data-date][data-level]")
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 "
+            "(Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 "
+            "(KHTML, like Gecko) "
+            "Chrome/151.0.0.0 Safari/537.36"
+        ),
+        "Accept": (
+            "text/html,"
+            "application/xhtml+xml,"
+            "application/xml;q=0.9,"
+            "*/*;q=0.8"
+        ),
+        "Accept-Language": (
+            "en-US,en;q=0.9"
+        ),
+    }
 
-    for cell in cells:
-        day = cell.get("data-date")
-        if not day:
+    response = requests.get(
+        URL,
+        headers=headers,
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    return response.text
+
+
+def parse_contributions(page_html: str):
+
+    soup = BeautifulSoup(
+        page_html,
+        "html.parser",
+    )
+
+    # ---------------------------------------------------------
+    # Find contribution cells
+    # ---------------------------------------------------------
+
+    cells = soup.select(
+        "[data-date][data-level]"
+    )
+
+    if not cells:
+        raise RuntimeError(
+            "Could not find GitHub contribution cells."
+        )
+
+    # ---------------------------------------------------------
+    # Build tooltip map
+    #
+    # GitHub's tooltip is NOT necessarily inside the cell.
+    #
+    # Example concept:
+    #
+    # <td id="cell-id"
+    #     data-date="2026-08-25"
+    #     data-level="4">
+    #
+    # <tool-tip for="cell-id">
+    #     19 contributions on August 25th
+    # </tool-tip>
+    # ---------------------------------------------------------
+
+    tooltip_map = {}
+
+    for tooltip in soup.select(
+        "tool-tip"
+    ):
+
+        target = tooltip.get("for")
+
+        if not target:
             continue
 
+        tooltip_text = tooltip.get_text(
+            " ",
+            strip=True,
+        )
+
+        tooltip_map[target] = (
+            tooltip_text
+        )
+
+    days = []
+
+    # ---------------------------------------------------------
+    # Parse every contribution cell
+    # ---------------------------------------------------------
+
+    for cell in cells:
+
+        contribution_date = (
+            cell.get("data-date")
+        )
+
+        if not contribution_date:
+            continue
+
+        cell_id = cell.get("id")
+
         try:
-            level = int(cell.get("data-level", "0"))
-        except (TypeError, ValueError):
+            level = int(
+                cell.get(
+                    "data-level",
+                    "0",
+                )
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
             level = 0
 
-        # Depending on GitHub's current markup, the count may be:
-        # - aria-label on the cell
-        # - text in a tool-tip child
-        # - regular text inside the cell
-        candidates = [
-            cell.get("aria-label", ""),
-            cell.get_text(" ", strip=True),
-        ]
+        level = max(
+            0,
+            min(
+                5,
+                level,
+            ),
+        )
 
-        for tip in cell.select("tool-tip, [role='tooltip']"):
-            candidates.append(tip.get_text(" ", strip=True))
-            candidates.append(tip.get("aria-label", ""))
+        count = 0
 
-        combined = " ".join(x for x in candidates if x)
-        count = parse_count(combined)
+        # -----------------------------------------------------
+        # PRIMARY:
+        # cell ID -> matching tooltip
+        # -----------------------------------------------------
 
-        days[day] = {
-            "date": day,
-            "count": count,
-            "level": max(0, min(5, level)),
-        }
+        if cell_id:
 
-    return sorted(days.values(), key=lambda item: item["date"])
+            tooltip_text = (
+                tooltip_map.get(
+                    cell_id,
+                    "",
+                )
+            )
+
+            count = extract_count(
+                tooltip_text
+            )
+
+        # -----------------------------------------------------
+        # FALLBACK:
+        # Search tooltip using date text.
+        # -----------------------------------------------------
+
+        if count == 0:
+
+            date_string = (
+                contribution_date
+            )
+
+            # Search all tooltip texts.
+            for tooltip_text in (
+                tooltip_map.values()
+            ):
+
+                if not tooltip_text:
+                    continue
+
+                extracted = extract_count(
+                    tooltip_text
+                )
+
+                if extracted > 0:
+
+                    # Don't blindly assign arbitrary
+                    # tooltip counts. Only use this
+                    # fallback when GitHub's tooltip
+                    # contains the contribution date.
+                    #
+                    # The primary ID mapping above is
+                    # preferred.
+
+                    try:
+                        parsed_date = date.fromisoformat(
+                            date_string
+                        )
+
+                        month_name = (
+                            parsed_date.strftime(
+                                "%B"
+                            )
+                        )
+
+                        day_number = (
+                            str(
+                                parsed_date.day
+                            )
+                        )
+
+                        if (
+                            month_name
+                            in tooltip_text
+                            and day_number
+                            in tooltip_text
+                        ):
+                            count = extracted
+                            break
+
+                    except ValueError:
+                        pass
+
+        days.append(
+            {
+                "date": contribution_date,
+                "count": count,
+                "level": level,
+            }
+        )
+
+    # ---------------------------------------------------------
+    # Remove duplicate dates
+    # ---------------------------------------------------------
+
+    unique_days = {}
+
+    for item in days:
+
+        unique_days[
+            item["date"]
+        ] = item
+
+    days = sorted(
+        unique_days.values(),
+        key=lambda item: item["date"],
+    )
+
+    return days
 
 
 def main():
-    response = requests.get(
-        URL,
-        headers={
-            "User-Agent": "naichal18-profile-art/2.0",
-            "Accept": "text/html,application/xhtml+xml",
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
 
-    days = parse_cells(response.text)
+    print(
+        f"Fetching GitHub contributions "
+        f"for {USERNAME}..."
+    )
+
+    page_html = fetch_github_page()
+
+    days = parse_contributions(
+        page_html
+    )
 
     if not days:
-        soup = BeautifulSoup(response.text, "html.parser")
-        data_dates = len(soup.select("[data-date]"))
-        data_levels = len(soup.select("[data-level]"))
+
         raise RuntimeError(
-            "GitHub returned the page, but no contribution cells were parsed. "
-            f"Diagnostics: status={response.status_code}, "
-            f"data-date={data_dates}, data-level={data_levels}, url={URL}"
+            "No contribution days were parsed."
         )
 
-    # Keep the most recent 371 days (~53 weeks).
+    # Keep approximately 53 weeks.
     days = days[-371:]
 
-    total = sum(item["count"] for item in days)
+    total = sum(
+        item["count"]
+        for item in days
+    )
+
+    active_days = sum(
+        1
+        for item in days
+        if item["count"] > 0
+    )
+
+    print("")
+    print("=" * 60)
+    print("Contribution parsing result")
+    print("=" * 60)
+    print(
+        f"Days parsed   : {len(days)}"
+    )
+    print(
+        f"Active days   : {active_days}"
+    )
+    print(
+        f"Total         : {total}"
+    )
+    print("=" * 60)
+
+    # ---------------------------------------------------------
+    # SAFETY CHECK
+    #
+    # Never overwrite the JSON with fake zero data.
+    # ---------------------------------------------------------
+
+    if total == 0:
+
+        raise RuntimeError(
+            "ERROR: GitHub returned contribution levels "
+            "but the contribution counts could not be parsed. "
+            "Refusing to write incorrect zero-count data."
+        )
 
     payload = {
         "username": USERNAME,
@@ -118,18 +358,27 @@ def main():
         "days": days,
     }
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False),
+    OUTPUT_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    OUTPUT_FILE.write_text(
+        json.dumps(
+            payload,
+            indent=2,
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
 
-    nonzero = sum(1 for item in days if item["count"] > 0)
     print(
-        f"Fetched {len(days)} days for {USERNAME}: "
-        f"{total} total contributions across {nonzero} active days."
+        f"Saved contribution data to:"
     )
-    print(f"Wrote: {OUT}")
+
+    print(
+        OUTPUT_FILE
+    )
 
 
 if __name__ == "__main__":
