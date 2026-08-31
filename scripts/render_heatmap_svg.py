@@ -12,12 +12,12 @@ DATA_FILE = ROOT / "data" / "contributions.json"
 OUTPUT_FILE = ROOT / "contrib-heatmap.svg"
 
 PALETTE = [
-    "#161b22",
-    "#0e4429",
-    "#006d32",
-    "#26a641",
-    "#39d353",
-    "#69f0a0",
+    "#161b22",  # 0 contributions
+    "#0e4429",  # 1-2
+    "#006d32",  # 3-5
+    "#26a641",  # 6-9
+    "#39d353",  # 10-14
+    "#69f0a0",  # 15+
 ]
 
 CELL_SIZE = 13
@@ -54,29 +54,33 @@ def load_data():
     return data
 
 
-def get_level(item):
-    count = int(
-        item.get("count", 0)
-    )
+def get_level(count):
+    """
+    Calculate the heatmap level ONLY from the
+    actual contribution count.
 
-    level = int(
-        item.get("level", 0)
-    )
+    GitHub's scraped data-level value is deliberately
+    ignored because it can be inconsistent with count.
+    """
 
-    if count > 0 and level == 0:
-        if count <= 2:
-            level = 1
-        elif count <= 5:
-            level = 2
-        elif count <= 9:
-            level = 3
-        else:
-            level = 4
+    count = int(count)
 
-    return max(
-        0,
-        min(5, level)
-    )
+    if count <= 0:
+        return 0
+
+    if count <= 2:
+        return 1
+
+    if count <= 5:
+        return 2
+
+    if count <= 9:
+        return 3
+
+    if count <= 14:
+        return 4
+
+    return 5
 
 
 def build_calendar(data):
@@ -94,7 +98,8 @@ def build_calendar(data):
         for item in days
     )
 
-    # Finish on Saturday so the grid contains complete weeks.
+    # Finish on Saturday so the grid contains
+    # complete Sunday-Saturday weeks.
     days_until_saturday = (
         6 - latest_date.weekday()
     ) % 7
@@ -116,6 +121,7 @@ def build_calendar(data):
     cells = []
 
     for week in range(WEEKS):
+
         for weekday in range(DAYS_PER_WEEK):
 
             current_date = (
@@ -137,8 +143,14 @@ def build_calendar(data):
                 {
                     "date": date_string,
                     "count": 0,
-                    "level": 0,
                 }
+            )
+
+            count = int(
+                item.get(
+                    "count",
+                    0
+                )
             )
 
             cells.append(
@@ -146,15 +158,11 @@ def build_calendar(data):
                     "week": week,
                     "weekday": weekday,
                     "date": date_string,
-                    "count": int(
-                        item.get(
-                            "count",
-                            0
-                        )
-                    ),
-                    "level": get_level(
-                        item
-                    ),
+                    "count": count,
+
+                    # IMPORTANT:
+                    # Level is now derived from count.
+                    "level": get_level(count),
                 }
             )
 
@@ -209,6 +217,7 @@ def render(data):
         f'fill="#0b1220"/>'
     )
 
+    # Border
     svg.append(
         f'<rect '
         f'x="1" '
@@ -352,6 +361,7 @@ def render(data):
                 f"{cell_date}"
             )
 
+        # Diagonal staggered animation.
         delay = (
             (
                 week * 7
@@ -360,9 +370,6 @@ def render(data):
             * 0.012
         )
 
-        # IMPORTANT:
-        # The rect itself starts invisible.
-        # There is NO invisible parent <g>.
         svg.append(
             f'<rect '
             f'x="{x}" '
@@ -465,6 +472,10 @@ def main():
     print(
         f"Heatmap generated successfully: "
         f"{OUTPUT_FILE}"
+    )
+
+    print(
+        f"Total contributions: {total:,}"
     )
 
 
