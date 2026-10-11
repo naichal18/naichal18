@@ -1,43 +1,8 @@
 {
   "username": "naichal18",
-  "updated": "2026-10-10",
-  "total": 1334,
+  "updated": "2026-10-11",
+  "total": 1281,
   "days": [
-    {
-      "date": "2025-10-05",
-      "count": 5,
-      "level": 0
-    },
-    {
-      "date": "2025-10-06",
-      "count": 6,
-      "level": 2
-    },
-    {
-      "date": "2025-10-07",
-      "count": 5,
-      "level": 0
-    },
-    {
-      "date": "2025-10-08",
-      "count": 12,
-      "level": 4
-    },
-    {
-      "date": "2025-10-09",
-      "count": 4,
-      "level": 2
-    },
-    {
-      "date": "2025-10-10",
-      "count": 12,
-      "level": 4
-    },
-    {
-      "date": "2025-10-11",
-      "count": 0,
-      "level": 0
-    },
     {
       "date": "2025-10-12",
       "count": 12,
@@ -1855,7 +1820,12 @@
     },
     {
       "date": "2026-10-10",
-      "count": 10,
+      "count": 1,
+      "level": 1
+    },
+    {
+      "date": "2026-10-11",
+      "count": 0,
       "level": 0
     }
   ]
